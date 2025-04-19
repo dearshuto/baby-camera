@@ -1,49 +1,106 @@
-use std::io::Write;
-use std::net::TcpListener;
+use std::sync::Arc;
+
+use opencv::videoio::VideoCapture;
+use tokio::io::AsyncWriteExt;
+use tokio::net::{TcpListener, TcpStream};
 
 use opencv::core::Vector;
 use opencv::{Result, videoio};
 use opencv::{imgcodecs, prelude::*};
+use tokio::sync::RwLock;
+use tokio::sync::mpsc::Sender;
 
-fn main() -> Result<()> {
-    let listener = TcpListener::bind("192.168.1.100:8080").unwrap();
+struct StreamData {
+    image_data: String,
+    buffer_data: Arc<RwLock<opencv::core::Vector<u8>>>,
+}
 
-    let mut cam = videoio::VideoCapture::new(0, videoio::CAP_ANY)?; // 0 is the default camera
+async fn serve_camera(mut camera: VideoCapture, senders: Arc<RwLock<Vec<Sender<StreamData>>>>) {
     let mut frame = Mat::default();
-    let opened = videoio::VideoCapture::is_opened(&cam)?;
+    let buf = Arc::new(RwLock::new(opencv::core::Vector::new()));
+    loop {
+        let image_data = {
+            let mut buf = buf.write().await;
+            camera.read(&mut frame).expect("Failed to capture frame");
+            buf.clear();
+            let _ = imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new());
+
+            format!(
+                "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                buf.len()
+            )
+        };
+
+        for sender in senders.read().await.iter() {
+            let stream_data = StreamData {
+                image_data: image_data.clone(),
+                buffer_data: buf.clone(),
+            };
+            sender.send(stream_data).await.unwrap_or_default();
+        }
+    }
+}
+
+async fn serve(mut stream: TcpStream, mut receiver: tokio::sync::mpsc::Receiver<StreamData>) {
+    while let Some(data) = receiver.recv().await {
+        let Ok(_) = stream.write_all(data.image_data.as_bytes()).await else {
+            break;
+        };
+
+        let buffer = data.buffer_data.read().await;
+        let Ok(_) = stream.write_all(&buffer.as_slice()).await else {
+            break;
+        };
+
+        let Ok(_) = stream.write_all(b"\r\n").await else {
+            break;
+        };
+
+        let Ok(_) = stream.flush().await else {
+            break;
+        };
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // 0 is the default camera
+    let camera = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
+
+    // カメラの設定に失敗したら終了
+    let opened = videoio::VideoCapture::is_opened(&camera)?;
     if !opened {
         panic!("Unable to open default camera!");
     }
 
-    let mut buf = opencv::core::Vector::new();
+    // 通信を開始できなければ終了
+    let listener = TcpListener::bind("192.168.1.91:8080").await.unwrap();
+
+    let senders = Arc::default();
+
+    // カメラ映像のキャプチャータスク
+    let senders_local = Arc::clone(&senders);
+    tokio::spawn(async move {
+        serve_camera(camera, senders_local).await;
+    });
+
     loop {
-        let (mut stream, _) = listener.accept().expect("Failed to accept connection");
-        cam.read(&mut frame).expect("Failed to capture frame");
-        buf.clear();
-        let _ = imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new());
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("Failed to accept connection");
 
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n"
         );
 
-        stream.write_all(response.as_bytes()).unwrap();
+        stream.write_all(response.as_bytes()).await.unwrap();
 
-        loop {
-            cam.read(&mut frame)?;
-            buf.clear();
-            let _ = imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new());
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        tokio::spawn(async move {
+            serve(stream, receiver).await;
+        });
 
-            let image_data = format!(
-                "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
-                buf.len()
-            );
-            let Ok(_) = stream.write_all(image_data.as_bytes()) else {
-                break;
-            };
-
-            stream.write_all(buf.as_slice()).unwrap();
-            stream.write_all(b"\r\n").unwrap();
-            stream.flush().unwrap();
-        }
+        senders.write().await.push(sender);
     }
 }
