@@ -32,12 +32,32 @@ async fn serve_camera(mut camera: VideoCapture, senders: Arc<RwLock<Vec<Sender<S
             )
         };
 
-        for sender in senders.read().await.iter() {
-            let stream_data = StreamData {
-                image_data: image_data.clone(),
-                buffer_data: buf.clone(),
-            };
-            sender.send(stream_data).await.unwrap_or_default();
+        // ストリーム用のデータを通知
+        // ここは読み取りロック
+        //
+        // 通知処理と後片付けを同時にやろうとすると書き込みロックが必要なので、
+        // 読み取りロックだけで事足りるように通知処理と分けている
+        let is_shrink_needed = {
+            let mut is_shrink_needed = false;
+            let senders = senders.read().await;
+            for sender in senders.iter() {
+                let stream_data = StreamData {
+                    image_data: image_data.clone(),
+                    buffer_data: buf.clone(),
+                };
+
+                if let Err(_) = sender.send(stream_data).await {
+                    is_shrink_needed = true;
+                }
+            }
+            is_shrink_needed
+        };
+
+        // 閉じているチャンネルがあれば送信キューから削除
+        // ここは書き込みロック
+        if is_shrink_needed {
+            let mut senders = senders.write().await;
+            senders.retain(|sender| !sender.is_closed());
         }
     }
 }
