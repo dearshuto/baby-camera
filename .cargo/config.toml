@@ -1,0 +1,13 @@
+[build]
+# クロスコンパイル用の設定
+# ex. cargo build --release --target aarch64-unknown-linux-gnu
+# 
+# 特に opencv クレートのビルドが重いので、
+# ラズパイのように非力なマシン向けの実行ファイルを別の環境で作成するときに活用する
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-g++"
+
+[env]
+# このアプリを動作させるための必要最低限の OpeCV のモジュールを環境変数経由で指定
+# OpeCV をソースビルドするときに不要なモジュールをビルドしなくて済む
+OPENCV_LINK_LIBS = "opencv_core,opencv_videoio,opencv_imgcodecs,opencv_imgproc"
