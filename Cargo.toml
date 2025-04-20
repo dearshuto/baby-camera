@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-opencv = { version = "*", default-features = false, features = ["imgcodecs", "videoio"]}
+chrono = "*"
+opencv = { version = "*", default-features = false, features = ["imgproc", "imgcodecs", "videoio"]}
 tokio = { version = "1.0", features = ["full"] }

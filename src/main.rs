@@ -2,11 +2,12 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Timelike;
 use opencv::videoio::VideoCapture;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
-use opencv::core::Vector;
+use opencv::core::{Point2i, VecN, Vector};
 use opencv::{Result, videoio};
 use opencv::{imgcodecs, prelude::*};
 use tokio::sync::RwLock;
@@ -34,6 +35,27 @@ async fn serve_camera(mut camera: VideoCapture, senders: Arc<RwLock<Vec<Sender<S
             let mut buf = buf.write().await;
             camera.read(&mut frame).expect("Failed to capture frame");
             buf.clear();
+
+            let current_time = chrono::Local::now();
+            if let Err(_) = opencv::imgproc::put_text(
+                &mut frame,
+                &format!(
+                    "{}:{} {}",
+                    current_time.hour(),
+                    current_time.minute(),
+                    current_time.second()
+                ),
+                Point2i::new(50, 50),
+                opencv::imgproc::FONT_HERSHEY_SIMPLEX,
+                1.5,
+                VecN::new(1.0, 255.0, 1.0, 255.0),
+                1,
+                opencv::imgproc::LINE_4,
+                false,
+            ) {
+                // もみ消す
+            }
+
             let _ = imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new());
 
             format!(
