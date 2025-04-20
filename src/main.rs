@@ -82,6 +82,7 @@ async fn serve(mut stream: TcpStream, mut receiver: tokio::sync::mpsc::Receiver<
         let Ok(_) = stream.write_all(&buffer.as_slice()).await else {
             break;
         };
+        drop(buffer);
 
         let Ok(_) = stream.write_all(b"\r\n").await else {
             break;
