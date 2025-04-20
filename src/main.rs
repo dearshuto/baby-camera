@@ -1,3 +1,4 @@
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use opencv::videoio::VideoCapture;
@@ -74,7 +75,8 @@ async fn main() -> Result<()> {
     }
 
     // 通信を開始できなければ終了
-    let listener = TcpListener::bind("192.168.1.91:8080").await.unwrap();
+    let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 8080);
+    let listener = TcpListener::bind(socket_addr).await.unwrap();
 
     let senders = Arc::default();
 
