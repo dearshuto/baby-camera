@@ -1,5 +1,6 @@
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use opencv::videoio::VideoCapture;
 use tokio::io::AsyncWriteExt;
@@ -20,6 +21,15 @@ async fn serve_camera(mut camera: VideoCapture, senders: Arc<RwLock<Vec<Sender<S
     let mut frame = Mat::default();
     let buf = Arc::new(RwLock::new(opencv::core::Vector::new()));
     loop {
+        // 観測者が誰もいなければ何もしないで処理をスカす
+        {
+            let senders = senders.read().await;
+            if senders.is_empty() {
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+                continue;
+            }
+        }
+
         let image_data = {
             let mut buf = buf.write().await;
             camera.read(&mut frame).expect("Failed to capture frame");
