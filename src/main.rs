@@ -1,5 +1,6 @@
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::Timelike;
 use opencv::videoio::VideoCapture;
@@ -21,7 +22,13 @@ async fn serve_camera(mut camera: VideoCapture, mut sender_receiver: Receiver<Se
     let mut senders = Vec::default();
     let mut frame = Mat::default();
     let buf = Arc::new(RwLock::new(opencv::core::Vector::new()));
+
     loop {
+        // サンプリング間隔の調整
+        // 細かくすると動画がなめらかになるが CPU 負荷が高くなる
+        // TODO: 外部からパラメーターで指定できるようにしたい
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
         if senders.is_empty() {
             // 観測者が誰もいなければ次の観測者を待つ
             if let Some(sender) = sender_receiver.recv().await {
