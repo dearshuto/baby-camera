@@ -69,18 +69,23 @@ async fn serve_camera(mut camera: VideoCapture, mut sender_receiver: Receiver<Se
 
         // ストリーム用のデータを通知
         let is_shrink_needed = {
-            let mut is_shrink_needed = false;
+            let mut handles = Vec::default();
             for sender in &senders {
+                // 送信処理はすべて並列実行
                 let stream_data = StreamData {
                     image_data: image_data.clone(),
                     buffer_data: buf.clone(),
                 };
 
-                if let Err(_) = sender.send(stream_data).await {
-                    is_shrink_needed = true;
-                }
+                handles.push(sender.send(stream_data));
             }
-            is_shrink_needed
+
+            // 送信処理の完了待ち
+            // MEMO: 遅いストリームがあるとそれが律速となるが気にしなくてよい？
+            let results = futures_util::future::join_all(handles).await;
+
+            // 送信に失敗したストリームがあればフラグを立てて後段でキューを更新する
+            results.iter().any(|x| x.is_err())
         };
 
         // 閉じているチャンネルがあれば送信キューから削除
