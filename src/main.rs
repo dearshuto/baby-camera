@@ -18,8 +18,12 @@ struct StreamData {
     buffer_data: Arc<RwLock<opencv::core::Vector<u8>>>,
 }
 
-async fn serve_camera(mut camera: VideoCapture, mut sender_receiver: Receiver<Sender<StreamData>>) {
-    let mut senders = Vec::default();
+async fn serve_camera(
+    mut camera: VideoCapture,
+    mut sender_receiver: Receiver<Sender<StreamData>>,
+    init_receiver: Sender<StreamData>,
+) -> (VideoCapture, Receiver<Sender<StreamData>>) {
+    let mut senders = vec![init_receiver];
     let mut frame = Mat::default();
     let buf = Arc::new(RwLock::new(opencv::core::Vector::new()));
 
@@ -30,10 +34,8 @@ async fn serve_camera(mut camera: VideoCapture, mut sender_receiver: Receiver<Se
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         if senders.is_empty() {
-            // 観測者が誰もいなければ次の観測者を待つ
-            if let Some(sender) = sender_receiver.recv().await {
-                senders.push(sender);
-            }
+            // 観測者が誰もいなかったので終了
+            return (camera, sender_receiver);
         } else {
             // すでに観測者がいる場合は追加の観測者がいないか確認する
             if let Ok(sender) = sender_receiver.try_recv() {
@@ -141,10 +143,9 @@ async fn main() -> Result<()> {
 
     let (observer_sender, observer_receiver) = tokio::sync::mpsc::channel(1);
 
-    // カメラ映像のキャプチャータスク
-    tokio::spawn(async move {
-        serve_camera(camera, observer_receiver).await;
-    });
+    // カメラ映像のキャプチャータスクの初期値
+    // カメラとレシーバーの所有権を移譲するために両インスタンスを即時返すタスクを発行している
+    let mut handle = tokio::spawn(async move { (camera, observer_receiver) });
 
     loop {
         let (mut stream, _) = listener
@@ -163,6 +164,14 @@ async fn main() -> Result<()> {
             serve(stream, receiver).await;
         });
 
-        observer_sender.send(sender).await.unwrap_or_default();
+        // 観測者が誰もいなくなってタスクが終了している
+        // この場合は再起動する
+        if handle.is_finished() {
+            let (camera, observer_receiver) = handle.await.unwrap();
+            handle =
+                tokio::spawn(async move { serve_camera(camera, observer_receiver, sender).await });
+        } else {
+            observer_sender.send(sender).await.unwrap_or_default();
+        }
     }
 }
