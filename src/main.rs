@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Timelike;
+use clap::Parser;
 use opencv::videoio::VideoCapture;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -13,6 +14,16 @@ use opencv::{imgcodecs, prelude::*};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(short, long, default_value_t = 8080)]
+    port: u16,
+
+    /// millisec
+    #[arg(long, default_value_t = 200)]
+    tick: u64,
+}
+
 struct StreamData {
     image_data: String,
     buffer_data: Arc<RwLock<opencv::core::Vector<u8>>>,
@@ -22,6 +33,7 @@ async fn serve_camera(
     mut camera: VideoCapture,
     mut sender_receiver: Receiver<Sender<StreamData>>,
     init_receiver: Sender<StreamData>,
+    tick: u64, // millisec
 ) -> (VideoCapture, Receiver<Sender<StreamData>>) {
     let mut senders = vec![init_receiver];
     let mut frame = Mat::default();
@@ -31,7 +43,7 @@ async fn serve_camera(
         // サンプリング間隔の調整
         // 細かくすると動画がなめらかになるが CPU 負荷が高くなる
         // TODO: 外部からパラメーターで指定できるようにしたい
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(tick)).await;
 
         if senders.is_empty() {
             // 観測者が誰もいなかったので終了
@@ -128,6 +140,8 @@ async fn serve(mut stream: TcpStream, mut receiver: tokio::sync::mpsc::Receiver<
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = Args::parse();
+
     // 0 is the default camera
     let camera = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
 
@@ -138,7 +152,7 @@ async fn main() -> Result<()> {
     }
 
     // 通信を開始できなければ終了
-    let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 8080);
+    let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, args.port);
     let listener = TcpListener::bind(socket_addr).await.unwrap();
 
     let (observer_sender, observer_receiver) = tokio::sync::mpsc::channel(1);
@@ -168,8 +182,10 @@ async fn main() -> Result<()> {
         // この場合は再起動する
         if handle.is_finished() {
             let (camera, observer_receiver) = handle.await.unwrap();
-            handle =
-                tokio::spawn(async move { serve_camera(camera, observer_receiver, sender).await });
+            handle = tokio::spawn(async move {
+                let tick = args.tick.clamp(20, 1000);
+                serve_camera(camera, observer_receiver, sender, tick).await
+            });
         } else {
             observer_sender.send(sender).await.unwrap_or_default();
         }
