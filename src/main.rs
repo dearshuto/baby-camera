@@ -1,6 +1,5 @@
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use chrono::Timelike;
 use opencv::videoio::VideoCapture;
@@ -11,23 +10,27 @@ use opencv::core::{Point2i, VecN, Vector};
 use opencv::{Result, videoio};
 use opencv::{imgcodecs, prelude::*};
 use tokio::sync::RwLock;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 struct StreamData {
     image_data: String,
     buffer_data: Arc<RwLock<opencv::core::Vector<u8>>>,
 }
 
-async fn serve_camera(mut camera: VideoCapture, senders: Arc<RwLock<Vec<Sender<StreamData>>>>) {
+async fn serve_camera(mut camera: VideoCapture, mut sender_receiver: Receiver<Sender<StreamData>>) {
+    let mut senders = Vec::default();
     let mut frame = Mat::default();
     let buf = Arc::new(RwLock::new(opencv::core::Vector::new()));
     loop {
-        // 観測者が誰もいなければ何もしないで処理をスカす
-        {
-            let senders = senders.read().await;
-            if senders.is_empty() {
-                tokio::time::sleep(Duration::from_millis(1000)).await;
-                continue;
+        if senders.is_empty() {
+            // 観測者が誰もいなければ次の観測者を待つ
+            if let Some(sender) = sender_receiver.recv().await {
+                senders.push(sender);
+            }
+        } else {
+            // すでに観測者がいる場合は追加の観測者がいないか確認する
+            if let Ok(sender) = sender_receiver.try_recv() {
+                senders.push(sender);
             }
         }
 
@@ -65,14 +68,9 @@ async fn serve_camera(mut camera: VideoCapture, senders: Arc<RwLock<Vec<Sender<S
         };
 
         // ストリーム用のデータを通知
-        // ここは読み取りロック
-        //
-        // 通知処理と後片付けを同時にやろうとすると書き込みロックが必要なので、
-        // 読み取りロックだけで事足りるように通知処理と分けている
         let is_shrink_needed = {
             let mut is_shrink_needed = false;
-            let senders = senders.read().await;
-            for sender in senders.iter() {
+            for sender in &senders {
                 let stream_data = StreamData {
                     image_data: image_data.clone(),
                     buffer_data: buf.clone(),
@@ -86,9 +84,7 @@ async fn serve_camera(mut camera: VideoCapture, senders: Arc<RwLock<Vec<Sender<S
         };
 
         // 閉じているチャンネルがあれば送信キューから削除
-        // ここは書き込みロック
         if is_shrink_needed {
-            let mut senders = senders.write().await;
             senders.retain(|sender| !sender.is_closed());
         }
     }
@@ -131,12 +127,11 @@ async fn main() -> Result<()> {
     let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 8080);
     let listener = TcpListener::bind(socket_addr).await.unwrap();
 
-    let senders = Arc::default();
+    let (observer_sender, observer_receiver) = tokio::sync::mpsc::channel(1);
 
     // カメラ映像のキャプチャータスク
-    let senders_local = Arc::clone(&senders);
     tokio::spawn(async move {
-        serve_camera(camera, senders_local).await;
+        serve_camera(camera, observer_receiver).await;
     });
 
     loop {
@@ -156,6 +151,6 @@ async fn main() -> Result<()> {
             serve(stream, receiver).await;
         });
 
-        senders.write().await.push(sender);
+        observer_sender.send(sender).await.unwrap_or_default();
     }
 }
