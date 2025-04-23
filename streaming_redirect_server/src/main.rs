@@ -1,8 +1,13 @@
+use std::net::Ipv4Addr;
+
 use clap::Parser;
 use warp::Filter;
 
 #[derive(Debug, clap::Parser)]
 struct Args {
+    #[arg(short, long, default_value_t = 8000)]
+    port: u16,
+
     #[arg(short, long, required = false)]
     media: Option<String>,
 }
@@ -20,6 +25,7 @@ async fn main() {
 
     let filter = route.or(media_filter);
 
-    // サーバーを 0.0.0.0:8080 で起動
-    warp::serve(filter).run(([0, 0, 0, 0], 8080)).await;
+    // サーバーを起動
+    let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, args.port);
+    warp::serve(filter).run(socket_addr).await;
 }
