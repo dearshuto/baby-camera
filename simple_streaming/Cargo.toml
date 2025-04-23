@@ -1,0 +1,13 @@
+[package]
+name = "baby-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "*"
+clap = { version = "4.5.37", features = ["derive"] }
+opencv = { version = "*", default-features = false, features = ["imgproc", "imgcodecs", "videoio"]}
+tokio = { version = "1.0", features = ["full"] }
+
+# join_all を利用するための最低限の設定
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
