@@ -4,6 +4,7 @@ use clap::Parser;
 use detail::{GenericStream, VideoStream};
 
 use std::net::Ipv4Addr;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -97,17 +98,17 @@ where
     }
 }
 
-async fn serve(
-    mut stream: TcpStream,
-    mut receiver: tokio::sync::mpsc::Receiver<StreamData<opencv::core::Vector<u8>>>,
-) {
+async fn serve<T>(mut stream: TcpStream, mut receiver: tokio::sync::mpsc::Receiver<StreamData<T>>)
+where
+    T: Deref<Target = [u8]>,
+{
     while let Some(data) = receiver.recv().await {
         let Ok(_) = stream.write_all(data.image_data.as_bytes()).await else {
             break;
         };
 
         let buffer = data.buffer_data.read().await;
-        let Ok(_) = stream.write_all(&buffer.as_slice()).await else {
+        let Ok(_) = stream.write_all(&buffer).await else {
             break;
         };
         drop(buffer);
