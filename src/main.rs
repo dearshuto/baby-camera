@@ -1,7 +1,7 @@
 mod detail;
 
-use clap::Parser;
-use detail::{GenericStream, VideoStream};
+use clap::{Parser, Subcommand};
+use detail::{GenericStream, ReadStream, VideoStream};
 
 use std::net::Ipv4Addr;
 use std::ops::Deref;
@@ -16,15 +16,48 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(short, long, default_value_t = 8080)]
-    port: u16,
+    #[command(subcommand)]
+    subcommand: StreamType,
+}
 
-    /// millisec
-    #[arg(long, default_value_t = 200)]
-    tick: u64,
+#[derive(Debug, Subcommand)]
+enum StreamType {
+    /// 接続されているカメラデバイスからキャプチャーします
+    /// 利用できるデバイスはインストールされているドライバーに依存します
+    Device {
+        /// millisec
+        #[arg(long, default_value_t = 200)]
+        tick: u64,
 
-    #[arg(long, default_value_t = 0)]
-    camera: i32,
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+
+        #[arg(long, default_value_t = 0)]
+        camera: i32,
+    },
+
+    /// 標準入力に渡されたデータをキャプチャーデータとして使用します
+    Stdin {
+        /// millisec
+        #[arg(long, default_value_t = 200)]
+        tick: u64,
+
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+    },
+
+    /// TCP 通信でキャプチャーデータを取得します
+    Tcp {
+        /// millisec
+        #[arg(long, default_value_t = 200)]
+        tick: u64,
+
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+
+        #[arg(long, default_value_t = String::from("localhost:8081"))]
+        listen_socket_addr: String,
+    },
 }
 
 struct StreamData<T> {
@@ -43,6 +76,7 @@ async fn serve_camera_impl<TVideoStream>(
 )
 where
     TVideoStream: VideoStream,
+    <TVideoStream as VideoStream>::Buffer: Sync,
 {
     let mut senders = vec![init_receiver];
     let buf = Arc::new(RwLock::new(TVideoStream::new_buffer()));
@@ -126,18 +160,16 @@ where
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let args = Args::parse();
-
-    // 0 is the default camera
-    let Ok(video_stream) = GenericStream::new(args.camera) else {
-        // カメラの設定に失敗したら終了
-        panic!()
-    };
-
+async fn main_impl<T>(video_stream: T, port: u16, tick: u64)
+where
+    T: VideoStream + std::marker::Send + 'static,
+    <T as VideoStream>::Buffer: Sync,
+    <T as VideoStream>::Buffer: Send,
+    <T as VideoStream>::Buffer: Deref<Target = [u8]>,
+    <T as VideoStream>::Buffer: 'static,
+{
     // 通信を開始できなければ終了
-    let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, args.port);
+    let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port);
     let listener = TcpListener::bind(socket_addr).await.unwrap();
 
     let (observer_sender, observer_receiver) = tokio::sync::mpsc::channel(1);
@@ -168,11 +200,41 @@ async fn main() {
         if handle.is_finished() {
             let (video_stream, observer_receiver) = handle.await.unwrap();
             handle = tokio::spawn(async move {
-                let tick = args.tick.clamp(20, 1000);
+                let tick = tick.clamp(20, 1000);
                 serve_camera_impl(video_stream, observer_receiver, sender, tick).await
             });
         } else {
             observer_sender.send(sender).await.unwrap_or_default();
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let args = Args::parse();
+
+    match args.subcommand {
+        StreamType::Device { tick, port, camera } => {
+            let Ok(video_stream) = GenericStream::new(camera) else {
+                // カメラの設定に失敗したら終了
+                panic!()
+            };
+
+            main_impl(video_stream, port, tick).await;
+        }
+        StreamType::Stdin { tick, port } => {
+            let reader = std::io::stdin();
+            let read_stream = ReadStream::new(reader).unwrap();
+            main_impl(read_stream, port, tick).await;
+        }
+        StreamType::Tcp {
+            tick,
+            port,
+            listen_socket_addr,
+        } => {
+            let reader = std::net::TcpStream::connect(listen_socket_addr).unwrap();
+            let read_stream = ReadStream::new(reader).unwrap();
+            main_impl(read_stream, port, tick).await;
         }
     }
 }
