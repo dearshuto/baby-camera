@@ -13,8 +13,8 @@ pub struct GenericStream {
 }
 
 impl GenericStream {
-    pub fn new() -> Result<Self, ()> {
-        let Ok(video_capture) = VideoCapture::new(0, CAP_ANY) else {
+    pub fn new(camera_index: i32) -> Result<Self, ()> {
+        let Ok(video_capture) = VideoCapture::new(camera_index, CAP_ANY) else {
             return Err(());
         };
         let frame = Mat::default();

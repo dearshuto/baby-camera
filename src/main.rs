@@ -21,6 +21,9 @@ struct Args {
     /// millisec
     #[arg(long, default_value_t = 200)]
     tick: u64,
+
+    #[arg(long, default_value_t = 0)]
+    camera: i32,
 }
 
 struct StreamData<T> {
@@ -127,7 +130,7 @@ async fn main() {
     let args = Args::parse();
 
     // 0 is the default camera
-    let Ok(video_stream) = GenericStream::new() else {
+    let Ok(video_stream) = GenericStream::new(args.camera) else {
         // カメラの設定に失敗したら終了
         panic!()
     };
