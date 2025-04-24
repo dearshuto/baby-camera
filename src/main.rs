@@ -1,16 +1,15 @@
+mod detail;
+
+use clap::Parser;
+use detail::{GenericStream, VideoStream};
+
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Timelike;
-use clap::Parser;
-use opencv::videoio::VideoCapture;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
-use opencv::core::{Point2i, VecN, Vector};
-use opencv::{Result, videoio};
-use opencv::{imgcodecs, prelude::*};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -24,20 +23,25 @@ struct Args {
     tick: u64,
 }
 
-struct StreamData {
+struct StreamData<T> {
     image_data: String,
-    buffer_data: Arc<RwLock<opencv::core::Vector<u8>>>,
+    buffer_data: Arc<RwLock<T>>,
 }
 
-async fn serve_camera(
-    mut camera: VideoCapture,
-    mut sender_receiver: Receiver<Sender<StreamData>>,
-    init_receiver: Sender<StreamData>,
+async fn serve_camera_impl<TVideoStream>(
+    mut video_stream: TVideoStream,
+    mut sender_receiver: Receiver<Sender<StreamData<TVideoStream::Buffer>>>,
+    init_receiver: Sender<StreamData<TVideoStream::Buffer>>,
     tick: u64, // millisec
-) -> (VideoCapture, Receiver<Sender<StreamData>>) {
+) -> (
+    TVideoStream,
+    Receiver<Sender<StreamData<TVideoStream::Buffer>>>,
+)
+where
+    TVideoStream: VideoStream,
+{
     let mut senders = vec![init_receiver];
-    let mut frame = Mat::default();
-    let buf = Arc::new(RwLock::new(opencv::core::Vector::new()));
+    let buf = Arc::new(RwLock::new(TVideoStream::new_buffer()));
 
     loop {
         // サンプリング間隔の調整
@@ -47,7 +51,7 @@ async fn serve_camera(
 
         if senders.is_empty() {
             // 観測者が誰もいなかったので終了
-            return (camera, sender_receiver);
+            return (video_stream, sender_receiver);
         } else {
             // すでに観測者がいる場合は追加の観測者がいないか確認する
             if let Ok(sender) = sender_receiver.try_recv() {
@@ -57,34 +61,11 @@ async fn serve_camera(
 
         let image_data = {
             let mut buf = buf.write().await;
-            camera.read(&mut frame).expect("Failed to capture frame");
-            buf.clear();
-
-            let current_time = chrono::Local::now();
-            if let Err(_) = opencv::imgproc::put_text(
-                &mut frame,
-                &format!(
-                    "{}:{} {}",
-                    current_time.hour(),
-                    current_time.minute(),
-                    current_time.second()
-                ),
-                Point2i::new(50, 50),
-                opencv::imgproc::FONT_HERSHEY_SIMPLEX,
-                1.5,
-                VecN::new(1.0, 255.0, 1.0, 255.0),
-                1,
-                opencv::imgproc::LINE_4,
-                false,
-            ) {
-                // もみ消す
-            }
-
-            let _ = imgcodecs::imencode(".jpg", &frame, &mut buf, &Vector::new());
+            let length = video_stream.read(&mut buf);
 
             format!(
                 "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
-                buf.len()
+                length
             )
         };
 
@@ -116,7 +97,10 @@ async fn serve_camera(
     }
 }
 
-async fn serve(mut stream: TcpStream, mut receiver: tokio::sync::mpsc::Receiver<StreamData>) {
+async fn serve(
+    mut stream: TcpStream,
+    mut receiver: tokio::sync::mpsc::Receiver<StreamData<opencv::core::Vector<u8>>>,
+) {
     while let Some(data) = receiver.recv().await {
         let Ok(_) = stream.write_all(data.image_data.as_bytes()).await else {
             break;
@@ -139,17 +123,14 @@ async fn serve(mut stream: TcpStream, mut receiver: tokio::sync::mpsc::Receiver<
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     let args = Args::parse();
 
     // 0 is the default camera
-    let camera = videoio::VideoCapture::new(0, videoio::CAP_ANY)?;
-
-    // カメラの設定に失敗したら終了
-    let opened = videoio::VideoCapture::is_opened(&camera)?;
-    if !opened {
-        panic!("Unable to open default camera!");
-    }
+    let Ok(video_stream) = GenericStream::new() else {
+        // カメラの設定に失敗したら終了
+        panic!()
+    };
 
     // 通信を開始できなければ終了
     let socket_addr = std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, args.port);
@@ -159,7 +140,7 @@ async fn main() -> Result<()> {
 
     // カメラ映像のキャプチャータスクの初期値
     // カメラとレシーバーの所有権を移譲するために両インスタンスを即時返すタスクを発行している
-    let mut handle = tokio::spawn(async move { (camera, observer_receiver) });
+    let mut handle = tokio::spawn(async move { (video_stream, observer_receiver) });
 
     loop {
         let (mut stream, _) = listener
@@ -181,10 +162,10 @@ async fn main() -> Result<()> {
         // 観測者が誰もいなくなってタスクが終了している
         // この場合は再起動する
         if handle.is_finished() {
-            let (camera, observer_receiver) = handle.await.unwrap();
+            let (video_stream, observer_receiver) = handle.await.unwrap();
             handle = tokio::spawn(async move {
                 let tick = args.tick.clamp(20, 1000);
-                serve_camera(camera, observer_receiver, sender, tick).await
+                serve_camera_impl(video_stream, observer_receiver, sender, tick).await
             });
         } else {
             observer_sender.send(sender).await.unwrap_or_default();
