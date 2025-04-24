@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use chrono::Timelike;
 use opencv::{
     core::{Mat, Point2i, VecN, Vector},
@@ -6,6 +8,16 @@ use opencv::{
 };
 
 use super::VideoStream;
+
+pub struct GenericStreamBuffer(Vector<u8>);
+
+impl Deref for GenericStreamBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
 
 pub struct GenericStream {
     video_capture: VideoCapture,
@@ -25,12 +37,12 @@ impl GenericStream {
         })
     }
 
-    fn read(&mut self, buffer: &mut opencv::core::Vector<u8>) -> usize {
+    fn read(&mut self, buffer: &mut GenericStreamBuffer) -> usize {
         let Ok(_) = self.video_capture.read(&mut self.frame) else {
             return 0;
         };
 
-        buffer.clear();
+        buffer.0.clear();
 
         let current_time = chrono::Local::now();
         if let Err(_) = opencv::imgproc::put_text(
@@ -52,17 +64,17 @@ impl GenericStream {
             // もみ消す
         }
 
-        let _ = imgcodecs::imencode(".jpg", &self.frame, buffer, &Vector::new());
+        let _ = imgcodecs::imencode(".jpg", &self.frame, &mut buffer.0, &Vector::new());
 
         buffer.len()
     }
 }
 
 impl VideoStream for GenericStream {
-    type Buffer = Vector<u8>;
+    type Buffer = GenericStreamBuffer;
 
     fn new_buffer() -> Self::Buffer {
-        Vector::new()
+        GenericStreamBuffer(Vector::new())
     }
 
     fn read(&mut self, buffer: &mut Self::Buffer) -> usize {
