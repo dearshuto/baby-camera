@@ -163,9 +163,8 @@ async fn main() {
             port,
             listen_socket_addr,
         } => {
-            let reader = std::net::TcpStream::connect(listen_socket_addr).unwrap();
-            let read_stream = ReadStream::new(reader).unwrap();
-            main_impl(read_stream, port, tick).await;
+            let tcp_stream = detail::TcpStream::new(listen_socket_addr);
+            main_impl(tcp_stream, port, tick).await;
         }
     }
 }
