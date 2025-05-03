@@ -1,10 +1,12 @@
 mod generic_stream;
 mod polling_task;
 mod stdin_stream;
+mod tcp_stream;
 
 pub use generic_stream::GenericStream;
 pub use polling_task::PollingTask;
 pub use stdin_stream::ReadStream;
+pub use tcp_stream::TcpStream;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::StreamData;
