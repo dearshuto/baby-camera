@@ -5,9 +5,9 @@ edition = "2024"
 
 [dependencies]
 chrono = "*"
-lap = { version = "4.5.37", default-features = false, features = ["std", "derive"] }
+clap = { version = "4.5.37", default-features = false, features = ["std", "derive"] }
 opencv = { version = "*", default-features = false, features = ["imgproc", "imgcodecs", "videoio"], optional = true}
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.0", features = ["io-util", "io-std", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 
 # join_all を利用するための最低限の設定
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }

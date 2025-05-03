@@ -140,31 +140,36 @@ where
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let args = Args::parse();
+fn main() {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let args = Args::parse();
 
-    match args.subcommand {
-        StreamType::Device { tick, port, camera } => {
-            let Ok(video_stream) = GenericStream::new(camera) else {
-                // カメラの設定に失敗したら終了
-                panic!()
-            };
+            match args.subcommand {
+                StreamType::Device { tick, port, camera } => {
+                    let Ok(video_stream) = GenericStream::new(camera) else {
+                        // カメラの設定に失敗したら終了
+                        panic!()
+                    };
 
-            main_impl(video_stream, port, tick).await;
-        }
-        StreamType::Stdin { tick, port } => {
-            let reader = std::io::stdin();
-            let read_stream = ReadStream::new(reader).unwrap();
-            main_impl(read_stream, port, tick).await;
-        }
-        StreamType::Tcp {
-            tick,
-            port,
-            listen_socket_addr,
-        } => {
-            let tcp_stream = detail::TcpStream::new(listen_socket_addr);
-            main_impl(tcp_stream, port, tick).await;
-        }
-    }
+                    main_impl(video_stream, port, tick).await;
+                }
+                StreamType::Stdin { tick, port } => {
+                    let reader = std::io::stdin();
+                    let read_stream = ReadStream::new(reader).unwrap();
+                    main_impl(read_stream, port, tick).await;
+                }
+                StreamType::Tcp {
+                    tick,
+                    port,
+                    listen_socket_addr,
+                } => {
+                    let tcp_stream = detail::TcpStream::new(listen_socket_addr);
+                    main_impl(tcp_stream, port, tick).await;
+                }
+            }
+        });
 }
