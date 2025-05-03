@@ -56,6 +56,11 @@ enum StreamType {
 
         #[arg(long, default_value_t = String::from("localhost:8081"))]
         listen_socket_addr: String,
+
+        /// 子プロセスとして実行する外部コマンドを指定します
+        /// 別途用意されたキャプチャーサーバーを子プロセスとして紐づけるケースを想定しています
+        #[arg(long)]
+        external_command: Option<String>,
     },
 }
 
@@ -162,8 +167,16 @@ async fn main() {
             tick,
             port,
             listen_socket_addr,
+            external_command,
         } => {
-            let tcp_stream = detail::TcpStream::new(listen_socket_addr);
+            let tcp_stream = if let Some(external_command) = external_command {
+                // 外部コマンドあり
+                let command = std::process::Command::new(external_command);
+                detail::TcpStream::new_with_process(listen_socket_addr, command)
+            } else {
+                // 素の TCP ストリームを起動
+                detail::TcpStream::new(listen_socket_addr)
+            };
             main_impl(tcp_stream, port, tick).await;
         }
     }
