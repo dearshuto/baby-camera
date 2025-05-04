@@ -1,4 +1,4 @@
-use std::net::ToSocketAddrs;
+use std::{net::ToSocketAddrs, time::Duration};
 
 use super::{ReadStream, VideoStream};
 
@@ -28,7 +28,9 @@ impl VideoStream for TcpStream {
 
     fn read(&mut self, buffer: &mut Self::Buffer) -> usize {
         let stream = self.internal_stream.get_or_insert_with(|| {
-            let reader = std::net::TcpStream::connect(self.socket_addr).unwrap();
+            // MEMO: とりあえず 1 分でタイムアウトにしているが、外部から指定できたほうがいいと思う
+            let duration = Duration::from_secs(60);
+            let reader = std::net::TcpStream::connect_timeout(&self.socket_addr, duration).unwrap();
             ReadStream::new(reader).unwrap()
         });
         stream.read(buffer)
