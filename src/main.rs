@@ -176,7 +176,7 @@ async fn main() {
                     .args(external_command)
                     .spawn()
                     .unwrap();
-                detail::TcpStream::new_with_process(listen_socket_addr, command)
+                detail::TcpStream::new_with_process(listen_socket_addr, process)
             } else {
                 // 素の TCP ストリームを起動
                 detail::TcpStream::new(listen_socket_addr)
