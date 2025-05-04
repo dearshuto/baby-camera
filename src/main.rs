@@ -171,7 +171,11 @@ async fn main() {
         } => {
             let tcp_stream = if let Some(external_command) = external_command {
                 // 外部コマンドあり
-                let command = std::process::Command::new(external_command);
+                let mut external_command = external_command.split(' ');
+                let process = std::process::Command::new(external_command.next().unwrap())
+                    .args(external_command)
+                    .spawn()
+                    .unwrap();
                 detail::TcpStream::new_with_process(listen_socket_addr, command)
             } else {
                 // 素の TCP ストリームを起動
