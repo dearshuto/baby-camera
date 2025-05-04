@@ -1,4 +1,31 @@
+#[cfg(feature = "opencv")]
 mod generic_stream;
+
+#[cfg(not(feature = "opencv"))]
+mod generic_stream {
+    use super::VideoStream;
+
+    pub struct GenericStream;
+
+    impl GenericStream {
+        pub fn new(_: i32) -> Result<Self, ()> {
+            Ok(Self {})
+        }
+    }
+
+    impl VideoStream for GenericStream {
+        type Buffer = Vec<u8>;
+
+        fn new_buffer() -> Self::Buffer {
+            Vec::default()
+        }
+
+        fn read(&mut self, _buffer: &mut Self::Buffer) -> usize {
+            0
+        }
+    }
+}
+
 mod polling_task;
 mod stdin_stream;
 mod tcp_stream;
