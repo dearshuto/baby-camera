@@ -8,11 +8,20 @@ use super::{CaptureTask, VideoStream};
 
 pub struct PollingTask {
     tick: Duration,
+    allow_empty: bool,
 }
 
 impl PollingTask {
     pub fn new(tick: Duration) -> Self {
-        Self { tick }
+        Self {
+            tick,
+            allow_empty: false,
+        }
+    }
+
+    pub fn allow_empty(mut self) -> Self {
+        self.allow_empty = true;
+        self
     }
 }
 
@@ -42,7 +51,10 @@ impl CaptureTask for PollingTask {
 
             if senders.is_empty() {
                 // 観測者が誰もいなかったので終了
-                return (video_stream, sender_receiver);
+                // ただし観測者がいない状態が許可されているならスキップ
+                if !self.allow_empty {
+                    return (video_stream, sender_receiver);
+                }
             } else {
                 // すでに観測者がいる場合は追加の観測者がいないか確認する
                 if let Ok(sender) = sender_receiver.try_recv() {

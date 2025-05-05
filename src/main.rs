@@ -33,6 +33,9 @@ enum StreamType {
 
         #[arg(long, default_value_t = 0)]
         camera: i32,
+
+        #[arg(long, default_value_t = false)]
+        allow_empty: bool,
     },
 
     /// 標準入力に渡されたデータをキャプチャーデータとして使用します
@@ -43,6 +46,9 @@ enum StreamType {
 
         #[arg(short, long, default_value_t = 8080)]
         port: u16,
+
+        #[arg(long, default_value_t = false)]
+        allow_empty: bool,
     },
 
     /// TCP 通信でキャプチャーデータを取得します
@@ -61,6 +67,9 @@ enum StreamType {
         /// 別途用意されたキャプチャーサーバーを子プロセスとして紐づけるケースを想定しています
         #[arg(long)]
         external_command: Option<String>,
+
+        #[arg(long, default_value_t = false)]
+        allow_empty: bool,
     },
 }
 
@@ -94,7 +103,7 @@ where
     }
 }
 
-async fn main_impl<T>(video_stream: T, port: u16, tick: u64)
+async fn main_impl<T>(video_stream: T, port: u16, tick: u64, allow_empty: bool)
 where
     T: VideoStream + std::marker::Send + 'static,
     <T as VideoStream>::Buffer: Sync,
@@ -135,7 +144,13 @@ where
             let (video_stream, observer_receiver) = handle.await.unwrap();
             handle = tokio::spawn(async move {
                 let tick = tick.clamp(20, 1000);
-                PollingTask::new(Duration::from_millis(tick))
+                let polling_task = PollingTask::new(Duration::from_millis(tick));
+                let mut polling_task = if allow_empty {
+                    polling_task.allow_empty()
+                } else {
+                    polling_task
+                };
+                polling_task
                     .run(video_stream, observer_receiver, sender)
                     .await
             });
@@ -150,24 +165,34 @@ async fn main() {
     let args = Args::parse();
 
     match args.subcommand {
-        StreamType::Device { tick, port, camera } => {
+        StreamType::Device {
+            tick,
+            port,
+            camera,
+            allow_empty,
+        } => {
             let Ok(video_stream) = GenericStream::new(camera) else {
                 // カメラの設定に失敗したら終了
                 panic!()
             };
 
-            main_impl(video_stream, port, tick).await;
+            main_impl(video_stream, port, tick, allow_empty).await;
         }
-        StreamType::Stdin { tick, port } => {
+        StreamType::Stdin {
+            tick,
+            port,
+            allow_empty,
+        } => {
             let reader = std::io::stdin();
             let read_stream = ReadStream::new(reader).unwrap();
-            main_impl(read_stream, port, tick).await;
+            main_impl(read_stream, port, tick, allow_empty).await;
         }
         StreamType::Tcp {
             tick,
             port,
             listen_socket_addr,
             external_command,
+            allow_empty,
         } => {
             let tcp_stream = if let Some(external_command) = external_command {
                 // 外部コマンドあり
@@ -177,7 +202,7 @@ async fn main() {
                 // 素の TCP ストリームを起動
                 detail::TcpStream::new(listen_socket_addr)
             };
-            main_impl(tcp_stream, port, tick).await;
+            main_impl(tcp_stream, port, tick, allow_empty).await;
         }
     }
 }
