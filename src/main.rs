@@ -62,6 +62,15 @@ enum StreamType {
         #[arg(long)]
         external_command: Option<String>,
     },
+
+    /// REST API を使用して対話的なサーバーを起動します
+    Http {
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+
+        #[arg(long, default_value_t = String::from("index.html"))]
+        html: String,
+    },
 }
 
 struct StreamData<T> {
@@ -178,6 +187,9 @@ async fn main() {
                 detail::TcpStream::new(listen_socket_addr)
             };
             main_impl(tcp_stream, port, tick).await;
+        }
+        StreamType::Http { port, html } => {
+            detail::HttpServer::new().serve(html, port).await;
         }
     }
 }

@@ -26,11 +26,13 @@ mod generic_stream {
     }
 }
 
+mod http;
 mod polling_task;
 mod stdin_stream;
 mod tcp_stream;
 
 pub use generic_stream::GenericStream;
+pub use http::Server as HttpServer;
 pub use polling_task::PollingTask;
 pub use stdin_stream::ReadStream;
 pub use tcp_stream::TcpStream;

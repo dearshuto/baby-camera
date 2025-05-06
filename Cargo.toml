@@ -8,6 +8,7 @@ chrono = "*"
 clap = { version = "4.5.37", features = ["derive"] }
 opencv = { version = "*", default-features = false, features = ["imgproc", "imgcodecs", "videoio"], optional = true}
 tokio = { version = "1.0", features = ["full"] }
+warp = { version = "0.3.7", default-features = false, features = ["multipart"] }
 
 # join_all を利用するための最低限の設定
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
