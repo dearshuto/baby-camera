@@ -1,0 +1,2 @@
+name = "ffplay"
+args = ["-hide_banner", "-autoexit", "tcp://192.168.1.101:8080"]

@@ -33,6 +33,7 @@ mod tcp_stream;
 
 pub use generic_stream::GenericStream;
 pub use http::Server as HttpServer;
+pub use http::{ExternalProcess, ProcessData};
 pub use polling_task::PollingTask;
 pub use stdin_stream::ReadStream;
 pub use tcp_stream::TcpStream;
