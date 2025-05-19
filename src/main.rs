@@ -2,6 +2,7 @@ mod detail;
 
 use clap::{Parser, Subcommand};
 use detail::{CaptureTask, GenericStream, PollingTask, ReadStream, VideoStream};
+use serde::Deserialize;
 
 use std::net::Ipv4Addr;
 use std::ops::Deref;
@@ -70,6 +71,14 @@ enum StreamType {
 
         #[arg(long, default_value_t = String::from("index.html"))]
         html: String,
+    },
+
+    ExternalProcess {
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+
+        #[arg(short, long)]
+        command_file: String,
     },
 }
 
@@ -190,6 +199,13 @@ async fn main() {
         }
         StreamType::Http { port, html } => {
             detail::HttpServer::new().serve(html, port).await;
+        }
+        StreamType::ExternalProcess { port, command_file } => {
+            let str = std::fs::read_to_string(command_file).unwrap();
+            let process_data = toml::from_str(&str).unwrap();
+            detail::ExternalProcess::new()
+                .serve(process_data, port)
+                .await;
         }
     }
 }

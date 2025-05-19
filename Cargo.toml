@@ -13,5 +13,9 @@ warp = { version = "0.3.7", default-features = false, features = ["multipart"] }
 # join_all を利用するための最低限の設定
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 
+# 外部ファイル対応
+serde = { version = "*", features = ["derive"] }
+toml = "*"
+
 [features]
 default = ["opencv"]
