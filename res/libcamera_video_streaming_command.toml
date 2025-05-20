@@ -10,4 +10,6 @@ args = [
     "320",
     "--height",
     "240",
+    "--codec",
+    "mjpeg",
 ]
