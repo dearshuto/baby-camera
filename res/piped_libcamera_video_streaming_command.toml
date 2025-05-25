@@ -3,14 +3,19 @@ name = "libcamera-vid"
 args = [
     "-t",
     "0",
+    "--framerate",
+    "20",
     "--inline",
-    "--listen",
     "-o",
-    "tcp://0.0.0.0:8081",
+    "-",
     "--width",
-    "320",
+    "640",
     "--height",
-    "240",
+    "480",
     "--codec",
     "mjpeg",
 ]
+
+[[process_list]]
+name = "baby-rs"
+args = ["stdin", "--tick", "20"]

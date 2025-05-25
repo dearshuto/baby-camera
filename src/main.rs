@@ -2,7 +2,6 @@ mod detail;
 
 use clap::{Parser, Subcommand};
 use detail::{CaptureTask, GenericStream, PollingTask, ReadStream, VideoStream};
-use serde::Deserialize;
 
 use std::net::Ipv4Addr;
 use std::ops::Deref;
