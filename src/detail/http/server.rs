@@ -21,8 +21,17 @@ impl Server {
         // TODO: エラーチェック
         let route = warp::path::end().and(warp::fs::file(html_path.as_ref().to_path_buf()));
 
+        // index.html の横に admin.html が置いてあることを期待
+        let admin_html_path = {
+            let mut html_path = html_path.as_ref().parent().unwrap().to_path_buf();
+            html_path.push("admin.html");
+            html_path
+        };
+        let admin = warp::path("admin").and(warp::fs::file(admin_html_path));
+
         // とりあえずカレントをリソース置き場へ
-        let res_files = warp::path("static").and(warp::fs::dir("."));
+        let res_files = warp::path("assets").and(warp::fs::dir("assets"));
+        let res_local = warp::fs::dir(".");
 
         let process = Arc::new(Mutex::new(None));
         let process = warp::get()
@@ -30,7 +39,7 @@ impl Server {
             .and(warp::any().map(move || process.clone()))
             .and_then(Self::spawn_process);
 
-        let filter = route.or(process).or(res_files);
+        let filter = route.or(admin).or(process).or(res_files).or(res_local);
 
         // サーバーを 0.0.0.0:8080 で起動
         let socket_addr =
