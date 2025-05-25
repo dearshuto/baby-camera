@@ -1,0 +1,21 @@
+name = "ffmpeg"
+args = [
+    "-f",
+    "alsa",
+    "-i",
+    "default",
+    "-vn",
+    "-acodec",
+    "mp3",
+    "-c:v",
+    "h264_v4l2m2m",
+    "-f",
+    "hls",
+    "-hls_time",
+    "10",
+    "-hls_list_size",
+    "5",
+    "-hls_flags",
+    "delete_segments",
+    "audio.m3u8",
+]
