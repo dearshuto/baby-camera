@@ -21,18 +21,6 @@ impl TcpStream {
             child_process: None,
         }
     }
-
-    pub fn new_with_process<T>(addr: T, command: Command) -> Self
-    where
-        T: ToSocketAddrs,
-    {
-        Self {
-            socket_addr: addr.to_socket_addrs().unwrap().next().unwrap(),
-            internal_stream: None,
-            command: Some(command),
-            child_process: None,
-        }
-    }
 }
 
 impl VideoStream for TcpStream {
